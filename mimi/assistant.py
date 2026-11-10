@@ -217,16 +217,10 @@ class MimiAssistant(model):
                 break
 
             except Exception as exc:
-                error_message = str(exc).upper()
+    print("MIMI GEMINI ERROR:", repr(exc))
 
-                is_temporary = (
-                    getattr(exc, "code", None) == 503
-                    or "503" in error_message
-                    or "UNAVAILABLE" in error_message
-                )
-
-                if not is_temporary or attempt == 4:
-                    raise
+    if getattr(exc, "code", None) != 503 and "503" not in str(exc):
+        raise
 
                 message = (
                     f"Gemini is busy right now. "
