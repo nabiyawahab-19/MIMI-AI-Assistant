@@ -92,7 +92,7 @@ class MimiAssistant(model):
             )
         self.client = genai.Client(
     api_key=api_key,
-    http_options=types.HttpOptions(timeout=30000)
+    http_options=types.HttpOptions(timeout=120000)
 )
         self.model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
         self.history = []
