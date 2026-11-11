@@ -1,3 +1,4 @@
+
 import json
 import os
 import subprocess
@@ -6,6 +7,7 @@ from abc import ABC, abstractmethod
 
 from google import genai
 from google.genai import types
+
 
 SYSTEM_INSTRUCTION = """
 
@@ -47,6 +49,7 @@ Never execute arbitrary shell commands, delete files,
 send messages, make purchases, or change system settings.
 """
 
+
 ALLOWED_APPS = {
     "chrome": ["cmd", "/c", "start", "", "chrome"],
     "calculator": ["calc.exe"],
@@ -55,13 +58,15 @@ ALLOWED_APPS = {
 
 
 def open_application(app_name: str) -> str:
-    """Open one approved Windows application: Chrome, Calculator, or Notepad."""
+    """Open one approved Windows application."""
     key = app_name.strip().lower()
+
     if key not in ALLOWED_APPS:
         return (
             f"'{app_name}' is not on MIMI's approved app list. "
             "Currently I can open Chrome, Calculator, or Notepad."
         )
+
     try:
         subprocess.Popen(ALLOWED_APPS[key], shell=False)
         return f"Successfully requested Windows to open {key.title()}."
@@ -74,39 +79,49 @@ class model(ABC):
 
     @abstractmethod
     def ask(self, message: str, study_context: str = "") -> str:
-        """Respond to a user message using the provided study context."""
         raise NotImplementedError
 
     @abstractmethod
     def create_quiz(self, study_context: str, number_questions: int = 5):
-        """Generate a quiz from the supplied uploaded notes."""
         raise NotImplementedError
 
 
 class MimiAssistant(model):
+
     def __init__(self):
         api_key = os.getenv("GEMINI_API_KEY")
+
         if not api_key:
             raise RuntimeError(
                 "GEMINI_API_KEY is missing. Add it to your .env file."
             )
+
         self.client = genai.Client(
-    api_key=api_key,
-    http_options=types.HttpOptions(timeout=120000)
-)
-        self.model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+            api_key=api_key,
+            http_options=types.HttpOptions(timeout=120000),
+        )
+
+        self.model = os.getenv(
+            "GEMINI_MODEL",
+            "gemini-3.5-flash"
+        )
+
         self.history = []
 
     def test_connection(self):
         print("Testing Gemini connection...")
+
         response = self.client.models.generate_content(
             model=self.model,
             contents="Reply with only the word Hello.",
         )
+
         print("Gemini says:", response.text)
 
     def ask(self, message: str, study_context: str = "") -> str:
+
         context = ""
+
         if study_context:
             context = (
                 "\n\nThe user has supplied these study notes. "
@@ -115,12 +130,13 @@ class MimiAssistant(model):
             )
 
         user_prompt = (
-    "You are MIMI, the user's AI desktop companion. "
-    "Your name is MIMI, not Gemini. Respond naturally and conversationally. "
-    "Never return JSON unless specifically asked.\n\n"
-    + message
-    + context
-)
+            "You are MIMI, the user's AI desktop companion. "
+            "Your name is MIMI, not Gemini. Respond naturally and conversationally. "
+            "Never return JSON unless specifically asked.\n\n"
+            + message
+            + context
+        )
+
         contents = self.history + [
             types.Content(
                 role="user",
@@ -134,27 +150,36 @@ class MimiAssistant(model):
         for attempt in range(3):
             try:
                 print("MIMI DEBUG: Sending request to Gemini...")
+
                 response = self.client.models.generate_content(
                     model=self.model,
                     contents=contents,
-                   config=types.GenerateContentConfig(
-    temperature=0.7,
-), 
+                    config=types.GenerateContentConfig(
+                        temperature=0.7,
+                    ),
                 )
+
                 print("MIMI DEBUG: Gemini response received!")
                 break
+
             except Exception as exc:
+                print("MIMI GEMINI ERROR:", repr(exc))
+
                 if getattr(exc, "code", None) != 503 and "503" not in str(exc):
                     raise
+
                 if attempt == 2:
                     return (
                         "I'm sorry! Google's AI service is still busy. "
                         "Please try again in a little while. 💗"
                     )
+
                 time.sleep(wait_times[attempt])
 
-        answer = response.text if response is not None and response.text else (
-            "I couldn't create a response. Please try again."
+        answer = (
+            response.text
+            if response is not None and response.text
+            else "I couldn't create a response. Please try again."
         )
 
         self.history.extend(
@@ -169,18 +194,23 @@ class MimiAssistant(model):
                 ),
             ]
         )
+
         self.history = self.history[-12:]
+
         return answer
 
     def create_quiz(
-    self,
-    study_context: str,
-    number_questions: int = 5,
-    progress_callback=None
+        self,
+        study_context: str,
+        number_questions: int = 5,
+        progress_callback=None,
     ):
-        """Generate a structured quiz from the uploaded study notes."""
+        """Generate a structured quiz from uploaded study notes."""
+
         if not study_context or not study_context.strip():
-            raise ValueError("Please upload study notes before creating a quiz.")
+            raise ValueError(
+                "Please upload study notes before creating a quiz."
+            )
 
         prompt = f"""
         Create exactly {number_questions} multiple-choice questions
@@ -201,8 +231,8 @@ class MimiAssistant(model):
         {study_context[:25000]}
         """
 
-        
         wait_times = [5, 10, 20, 30]
+        response = None
 
         for attempt in range(5):
             try:
@@ -217,13 +247,16 @@ class MimiAssistant(model):
                 break
 
             except Exception as exc:
-    print("MIMI GEMINI ERROR:", repr(exc))
+                print("MIMI GEMINI ERROR:", repr(exc))
 
-    if getattr(exc, "code", None) != 503 and "503" not in str(exc):
-        raise
+                if getattr(exc, "code", None) != 503 and "503" not in str(exc):
+                    raise
+
+                if attempt == 4:
+                    raise
 
                 message = (
-                    f"Gemini is busy right now. "
+                    "Gemini is busy right now. "
                     f"Retrying in {wait_times[attempt]} seconds... ⏳"
                 )
 
@@ -234,6 +267,8 @@ class MimiAssistant(model):
 
                 time.sleep(wait_times[attempt])
 
+        if response is None or not response.text:
+            raise ValueError("MIMI did not receive a quiz response.")
 
         quiz = json.loads(response.text)
 
@@ -241,14 +276,29 @@ class MimiAssistant(model):
             raise ValueError("MIMI received an invalid quiz format.")
 
         for question in quiz:
-            if not all(key in question for key in ("question", "options", "answer", "explanation")):
-                raise ValueError("A quiz question is missing required information.")
+
+            if not all(
+                key in question
+                for key in ("question", "options", "answer", "explanation")
+            ):
+                raise ValueError(
+                    "A quiz question is missing required information."
+                )
 
             options = question["options"]
-            if not isinstance(options, dict) or set(options.keys()) != {"A", "B", "C", "D"}:
-                raise ValueError("A quiz question must have four options.")
+
+            if (
+                not isinstance(options, dict)
+                or set(options.keys()) != {"A", "B", "C", "D"}
+            ):
+                raise ValueError(
+                    "A quiz question must have four options."
+                )
 
             if question["answer"] not in {"A", "B", "C", "D"}:
-                raise ValueError("A quiz question has an invalid answer key.")
+                raise ValueError(
+                    "A quiz question has an invalid answer key."
+                )
 
         return quiz
+
